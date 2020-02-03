@@ -56,7 +56,8 @@ class SearchClient(SearchEngine):
             group_id = generate_unique_label()
 
         self.receive_topic = receive_topic
-        self.receiver = initial_consumer(receive_topic, group_id=group_id, bootstrap_servers=server_host,
+        self.receiver = initial_consumer(receive_topic,
+                                         group_id=group_id, bootstrap_servers=server_host,
                                          sasl_plain_username=user_name, sasl_plain_password=password,
                                          enable_auto_commit=True, value_deserializer=pickle.loads)
         self._result = {}
