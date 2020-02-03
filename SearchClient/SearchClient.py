@@ -79,7 +79,7 @@ class SearchClient(SearchEngine):
 
     def _check_connection(self):
         try:
-            self.groups
+            self._get_respond(self._request(SearchMethod.CHECK_CONNECTION))
             return True
         except Exception:
             return False
@@ -194,6 +194,9 @@ class SearchClient(SearchEngine):
             split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
             respond_ids.append(self._request(SearchMethod.ADD, group_name, split_vectors))
 
+        if len(respond_ids) == 1:
+            return self._get_respond(respond_ids[0])
+
         output = []
         for idx in respond_ids:
             output.extend(self._get_respond(idx))
@@ -216,6 +219,9 @@ class SearchClient(SearchEngine):
             split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
             respond_ids.append(self._request(SearchMethod.TRAIN, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
 
+        if len(respond_ids) == 1:
+            return self._get_respond(respond_ids[0])
+
         output = []
         for idx in respond_ids:
             output.extend(self._get_respond(idx))
@@ -229,6 +235,9 @@ class SearchClient(SearchEngine):
             split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
             respond_ids.append(self._request(SearchMethod.TRAIN_ADD, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
 
+        if len(respond_ids) == 1:
+            return self._get_respond(respond_ids[0])
+
         output = []
         for idx in respond_ids:
             output.extend(self._get_respond(idx))
@@ -241,6 +250,9 @@ class SearchClient(SearchEngine):
         for idx in range(0, vectors.shape[0], chunk_size):
             split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
             respond_ids.append(self._request(SearchMethod.SEARCH, group_name, split_vectors, k=k))
+
+        if len(respond_ids) == 1:
+            return self._get_respond(respond_ids[0])
 
         distances, indexes = [], []
         for idx in respond_ids:
