@@ -21,6 +21,7 @@ class SearchMethod(Enum):
     CPU = "CPU"
     GROUP_NAMES = "GROUP_NAMES"  # TODO: remove after debug
     GROUP_EXISTED = "GROUP_EXISTED"
+    CHECK_CONNECTION = "CHECK_CONNECTION"
 
 
 class SearchEngine(object):

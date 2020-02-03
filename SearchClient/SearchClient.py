@@ -79,12 +79,12 @@ class SearchClient(SearchEngine):
 
     def _check_connection(self):
         try:
-            self._request(SearchMethod.GROUP_NAMES, time_out=10)
+            self.groups
             return True
         except Exception:
             return False
 
-    def _request(self, method, *args, time_out=60, **kwargs):
+    def _request(self, method, *args, **kwargs):
         """
         :param method: one of methods that is supported in SearchMethod
         :param time_out: in seconds
@@ -106,6 +106,9 @@ class SearchClient(SearchEngine):
         if message.exception:
             raise message.exception
 
+        return respond_id
+
+    def _get_respond(self, respond_id, time_out=60):
         toc = time.time() + time_out
         while time.time() <= toc:
             if respond_id in self._result:
@@ -113,7 +116,7 @@ class SearchClient(SearchEngine):
                 if respond['error']:
                     raise self.SearchExecuteError(respond['error'])
                 return respond['output']
-            time.sleep(0.001)
+            time.sleep(1e-5)
         raise TimeoutError()
 
     def _clean(self):
@@ -154,7 +157,7 @@ class SearchClient(SearchEngine):
         :return: group list
         :rtype: list
         """
-        return self._request(SearchMethod.GROUP_NAMES)
+        return self._get_respond(self._request(SearchMethod.GROUP_NAMES))
 
     def create_index(self, index_type: IndexType, metric_type: MetricType, dim: int, group_name=None):
         """
@@ -167,14 +170,15 @@ class SearchClient(SearchEngine):
         """
         index_type = index_type.name
         metric_type = metric_type.name
-        group_name = self._request(SearchMethod.CREATE, index_type, metric_type, dim, group_name=group_name)
+        group_name = self._get_respond(self._request(SearchMethod.CREATE, index_type, metric_type, dim,
+                                                     group_name=group_name))
         with open(self._group_backup_file, "a") as f:
             f.write(f"{group_name}\n")
             f.flush()
         return group_name
 
     def get_vector(self, group_name, ids=None):
-        return decompress_ndarray(self._request(SearchMethod.GET, group_name, ids=ids))
+        return decompress_ndarray(self._get_respond(self._request(SearchMethod.GET, group_name, ids=ids)))
 
     def add_vector(self, group_name, vectors):
         """
@@ -183,10 +187,16 @@ class SearchClient(SearchEngine):
         :param vectors: numpy.ndarray
         :return: ids of vectors
         """
+        assert len(vectors.shape) == 2
+        chunk_size = self._max_point // vectors.shape[1]
+        respond_ids = []
+        for idx in range(0, vectors.shape[0], chunk_size):
+            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
+            respond_ids.append(self._request(SearchMethod.ADD, group_name, split_vectors))
+
         output = []
-        for idx in range(0, vectors.shape[0], self._max_point):
-            vectors = compress_ndarray(vectors[idx:idx + self._max_point])
-            output.extend(self._request(SearchMethod.ADD, group_name, vectors))
+        for idx in respond_ids:
+            output.extend(self._get_respond(idx))
         return output
 
     def train(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
@@ -199,36 +209,48 @@ class SearchClient(SearchEngine):
         :param nprobe: int
         Auto change to AUTO if nprobe > nlist. When nprobe == nlist as same as brute force search.
         """
+        assert len(vectors.shape) == 2
         chunk_size = self._max_point // vectors.shape[1]
-        output = []
+        respond_ids = []
         for idx in range(0, vectors.shape[0], chunk_size):
-            vectors_tmp = compress_ndarray(vectors[idx:idx + chunk_size][:])
-            output.extend(self._request(SearchMethod.TRAIN, group_name, vectors_tmp, nlist=nlist, nprobe=nprobe))
+            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
+            respond_ids.append(self._request(SearchMethod.TRAIN, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
+
+        output = []
+        for idx in respond_ids:
+            output.extend(self._get_respond(idx))
         return output
 
     def train_add(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
+        assert len(vectors.shape) == 2
         chunk_size = self._max_point // vectors.shape[1]
-        output = []
+        respond_ids = []
         for idx in range(0, vectors.shape[0], chunk_size):
-            vectors_tmp = compress_ndarray(vectors[idx:idx + chunk_size][:])
-            output.extend(self._request(SearchMethod.TRAIN_ADD, group_name, vectors_tmp, nlist=nlist, nprobe=nprobe))
+            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
+            respond_ids.append(self._request(SearchMethod.TRAIN_ADD, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
+
+        output = []
+        for idx in respond_ids:
+            output.extend(self._get_respond(idx))
         return output
 
     def search(self, group_name, vectors, k=1):
-        if len(vectors.shape) == 1:
-            vectors = vectors.reshape(1, vectors.shape[0])
+        assert len(vectors.shape) == 2
         chunk_size = self._max_point // vectors.shape[1]
-        distances, ids = [], []
-
+        respond_ids = []
         for idx in range(0, vectors.shape[0], chunk_size):
-            vectors_tmp = compress_ndarray(vectors[idx:idx+chunk_size][:])
-            distance, idx = self._request(SearchMethod.SEARCH, group_name, vectors_tmp, k=k)
+            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
+            respond_ids.append(self._request(SearchMethod.SEARCH, group_name, split_vectors, k=k))
+
+        distances, indexes = [], []
+        for idx in respond_ids:
+            distance, index = self._get_respond(idx)
             distances.extend(distance)
-            ids.extend(idx)
-        return distances, ids
+            indexes.extend(index)
+        return distances, indexes
 
     def remove_index(self, group_name):
-        self._request(SearchMethod.REMOVE_INDEX, group_name)
+        self._get_respond(self._request(SearchMethod.REMOVE_INDEX, group_name))
 
         with open(self._group_backup_file, "r") as f:
             groups = f.readlines()
@@ -238,26 +260,26 @@ class SearchClient(SearchEngine):
             f.writelines(groups)
 
     def remove_vector(self, group_name, ids):
-        return self._request(SearchMethod.REMOVE_VECTOR, group_name, ids)
+        return self._get_respond(self._request(SearchMethod.REMOVE_VECTOR, group_name, ids))
 
     def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
-        return self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe)
+        return self._get_respond(self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe))
 
     def index2gpu(self, group_name, gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
-        return self._request(SearchMethod.GPU, group_name,
-                             gpu_id=gpu_id, cache_size=cache_size, use_fp16=use_fp16)
+        return self._get_respond(self._request(SearchMethod.GPU, group_name, gpu_id=gpu_id, cache_size=cache_size, 
+                                               use_fp16=use_fp16))
 
     def index2cpu(self, group_name):
-        return self._request(SearchMethod.CPU, group_name)
+        return self._get_respond(self._request(SearchMethod.CPU, group_name))
 
     def save(self, group_name, over_write=False):
-        self._request(SearchMethod.SAVE, group_name=group_name, over_write=over_write)
+        self._get_respond(self._request(SearchMethod.SAVE, group_name=group_name, over_write=over_write))
 
     def load(self, group_name):
-        self._request(SearchMethod.LOAD, group_name=group_name)
+        self._get_respond(self._request(SearchMethod.LOAD, group_name=group_name))
 
     def is_group_existed(self, group_name):
-        return self._request(SearchMethod.GROUP_EXISTED, group_name)
+        return self._get_respond(self._request(SearchMethod.GROUP_EXISTED, group_name))
 
     def group_created(self):
         with open(self._group_backup_file, 'r') as f:
