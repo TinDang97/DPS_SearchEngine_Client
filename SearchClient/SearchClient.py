@@ -5,24 +5,54 @@ import time
 from SearchClient.Type import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT
 from SearchClient.SearchEngine import SearchEngine, MetricType, IndexType, DistanceType, SearchMethod
 from DPS_Util.KafaWrapper import initial_producer, initial_consumer
+from DPS_Util.RedisWrapper import initial_redis
 from DPS_Util.common.hash import hash_now
-from DPS_Util.compression import compress_ndarray, decompress_ndarray
+from DPS_Util.compression import compress_ndarray, decompress_ndarray, compress, decompress
 from threading import Thread
 
-DEFAULT_PARAMS = {
-    "method": None,
-    "args": [],
-    "kwargs": {},
-    "topic_respond": "",
-    "id": None
-}
 
-DEFAULT_RESPOND_PARAMS = {
-    "time_stamp": -1.,
-    "output": None,
-    "error": None,
-    "id": None
-}
+class Params(dict):
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+    DEFAULT_PARAMS = {
+        "method": "",
+        "args": [],
+        "kwargs": {},
+        "topic_respond": "",
+        "id": None
+    }
+
+    def __init__(self, params=None):
+        if params is None:
+            params = {}
+
+        default = self.DEFAULT_PARAMS.copy()
+        default.update(params)
+        super().__init__(default)
+
+    def get_dict(self):
+        return dict(self)
+
+
+class RequestParams(Params):
+    DEFAULT_PARAMS = {
+        "method": "",
+        "args": [],
+        "kwargs": {},
+        "topic_respond": "",
+        "id": None
+    }
+
+
+class RespondParams(Params):
+    DEFAULT_PARAMS = {
+        "output": None,
+        "error": None,
+        "id": None,
+        "time_stamp": -1.
+    }
 
 
 def generate_unique_label():
@@ -33,8 +63,12 @@ class SearchClient(SearchEngine):
     class SearchExecuteError(Exception):
         pass
 
-    def __init__(self, receive_topic=None, group_id=None, server_host="localhost", user_name=None, password=None,
-                 clear_time=5 * 60, max_message_size=1024 ** 2):
+    IndexType = IndexType
+    MetricType = MetricType
+
+    def __init__(self, receive_topic=None, group_id=None,
+                 kafka_host="localhost", kafka_user_name=None, kafka_password=None,
+                 redis_host="localhost:6379", redis_password="", clear_time=60):
         """
         :param receive_topic:
         :param group_id:
@@ -44,10 +78,9 @@ class SearchClient(SearchEngine):
         :param clear_time: in seconds
         """
         self.server_topic = "DPS_SEARCH_ENGINE_TESTING"
-        self.sender = initial_producer(bootstrap_servers=server_host, sasl_plain_username=user_name,
-                                       sasl_plain_password=password, value_serializer=pickle.dumps,
-                                       max_request_size=max_message_size)
-        self._max_point = int(max_message_size // 4)  # each point occupy 4 bytes, 1.5 compression ratio
+        self.sender = initial_producer(bootstrap_servers=kafka_host, sasl_plain_username=kafka_user_name,
+                                       sasl_plain_password=kafka_password, value_serializer=pickle.dumps)
+        self.vector_fetcher = initial_redis(redis_host, password=redis_password)
 
         if receive_topic is None:
             receive_topic = generate_unique_label()
@@ -57,8 +90,8 @@ class SearchClient(SearchEngine):
 
         self.receive_topic = receive_topic
         self.receiver = initial_consumer(receive_topic,
-                                         group_id=group_id, bootstrap_servers=server_host,
-                                         sasl_plain_username=user_name, sasl_plain_password=password,
+                                         group_id=group_id, bootstrap_servers=kafka_host,
+                                         sasl_plain_username=kafka_user_name, sasl_plain_password=kafka_password,
                                          enable_auto_commit=True, value_deserializer=pickle.loads)
         self._result = {}
         self._clear_time = clear_time
@@ -93,16 +126,17 @@ class SearchClient(SearchEngine):
         assert method in SearchMethod, "Function isn't supported!"
         assert not self.sender._closed and not self.receiver._closed, \
             "Connection has been closed. Please create new client."
+
         respond_id = f"id_{hash_now()}"
-        params = DEFAULT_PARAMS.copy()
-        params.update({
-            "method": method.name,
-            'args': args,
-            'kwargs': kwargs,
-            'topic_respond': self.receive_topic,
-            "id": respond_id
-        })
-        message = self.sender.send(self.server_topic, params)
+        params_request = RequestParams()
+
+        params_request.method = method.name
+        params_request.args = args
+        params_request.kwargs = kwargs
+        params_request.topic_respond = self.receive_topic
+        params_request.id = respond_id
+
+        message = self.sender.send(self.server_topic, params_request.get_dict())
 
         if message.exception:
             raise message.exception
@@ -114,9 +148,10 @@ class SearchClient(SearchEngine):
         while time.time() <= toc:
             if respond_id in self._result:
                 respond = self._result[respond_id]
-                if respond['error']:
-                    raise self.SearchExecuteError(respond['error'])
-                return respond['output']
+                if respond.error:
+                    raise self.SearchExecuteError(respond.error)
+                del self._result[respond_id]
+                return respond.output
             time.sleep(1e-5)
         raise TimeoutError()
 
@@ -126,11 +161,10 @@ class SearchClient(SearchEngine):
                 del self._result[idx]
 
     def _receive(self):
-        for m in self.receiver:
-            respond = DEFAULT_RESPOND_PARAMS.copy()
-            respond.update(m.value)
-            respond['time_stamp'] = time.time()
-            self._result[respond['id']] = respond
+        for message_block in self.receiver:
+            params_respond = RespondParams(message_block.value)
+            params_respond.time_stamp = time.time()
+            self._result[params_respond.id] = params_respond
 
     def close(self, time_out=30):
         self.sender.close()
@@ -179,7 +213,10 @@ class SearchClient(SearchEngine):
         return group_name
 
     def get_vector(self, group_name, ids=None):
-        return decompress_ndarray(self._get_respond(self._request(SearchMethod.GET, group_name, ids=ids)))
+        vector_idx = self._get_respond(self._request(SearchMethod.GET, group_name, ids=ids))
+        buffer = self.vector_fetcher.get(vector_idx)
+        self.vector_fetcher.delete(vector_idx)
+        return decompress_ndarray(buffer)
 
     def add_vector(self, group_name, vectors):
         """
@@ -189,19 +226,9 @@ class SearchClient(SearchEngine):
         :return: ids of vectors
         """
         assert len(vectors.shape) == 2
-        chunk_size = self._max_point // vectors.shape[1]
-        respond_ids = []
-        for idx in range(0, vectors.shape[0], chunk_size):
-            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
-            respond_ids.append(self._request(SearchMethod.ADD, group_name, split_vectors))
-
-        if len(respond_ids) == 1:
-            return self._get_respond(respond_ids[0])
-
-        output = []
-        for idx in respond_ids:
-            output.extend(self._get_respond(idx))
-        return output
+        vector_idx = f"vector_{hash_now()}"
+        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
+        return self._get_respond(self._request(SearchMethod.ADD, group_name, vector_idx))
 
     def train(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
         """
@@ -214,53 +241,26 @@ class SearchClient(SearchEngine):
         Auto change to AUTO if nprobe > nlist. When nprobe == nlist as same as brute force search.
         """
         assert len(vectors.shape) == 2
-        chunk_size = self._max_point // vectors.shape[1]
-        respond_ids = []
-        for idx in range(0, vectors.shape[0], chunk_size):
-            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
-            respond_ids.append(self._request(SearchMethod.TRAIN, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
-
-        if len(respond_ids) == 1:
-            return self._get_respond(respond_ids[0])
-
-        output = []
-        for idx in respond_ids:
-            output.extend(self._get_respond(idx))
-        return output
+        vector_idx = f"vector_{hash_now()}"
+        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
+        return self._get_respond(self._request(SearchMethod.TRAIN, group_name, vector_idx, nlist=nlist, nprobe=nprobe))
 
     def train_add(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
         assert len(vectors.shape) == 2
-        chunk_size = self._max_point // vectors.shape[1]
-        respond_ids = []
-        for idx in range(0, vectors.shape[0], chunk_size):
-            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
-            respond_ids.append(self._request(SearchMethod.TRAIN_ADD, group_name, split_vectors, nlist=nlist, nprobe=nprobe))
-
-        if len(respond_ids) == 1:
-            return self._get_respond(respond_ids[0])
-
-        output = []
-        for idx in respond_ids:
-            output.extend(self._get_respond(idx))
-        return output
+        vector_idx = f"vector_{hash_now()}"
+        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
+        return self._get_respond(self._request(SearchMethod.TRAIN_ADD, group_name, vector_idx, nlist=nlist, nprobe=nprobe))
 
     def search(self, group_name, vectors, k=1):
         assert len(vectors.shape) == 2
-        chunk_size = self._max_point // vectors.shape[1]
-        respond_ids = []
-        for idx in range(0, vectors.shape[0], chunk_size):
-            split_vectors = compress_ndarray(vectors[idx:idx + chunk_size, :])
-            respond_ids.append(self._request(SearchMethod.SEARCH, group_name, split_vectors, k=k))
 
-        if len(respond_ids) == 1:
-            return self._get_respond(respond_ids[0])
+        vector_idx = f"vector_{hash_now()}"
+        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
 
-        distances, indexes = [], []
-        for idx in respond_ids:
-            distance, index = self._get_respond(idx)
-            distances.extend(distance)
-            indexes.extend(index)
-        return distances, indexes
+        arr_idx = self._request(SearchMethod.SEARCH, group_name, vector_idx, k=k)
+        buffer = self.vector_fetcher.get(self._get_respond(arr_idx))
+        self.vector_fetcher.delete(arr_idx)
+        return pickle.loads(decompress(buffer))
 
     def remove_index(self, group_name):
         self._get_respond(self._request(SearchMethod.REMOVE_INDEX, group_name))
@@ -279,7 +279,7 @@ class SearchClient(SearchEngine):
         return self._get_respond(self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe))
 
     def index2gpu(self, group_name, gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
-        return self._get_respond(self._request(SearchMethod.GPU, group_name, gpu_id=gpu_id, cache_size=cache_size, 
+        return self._get_respond(self._request(SearchMethod.GPU, group_name, gpu_id=gpu_id, cache_size=cache_size,
                                                use_fp16=use_fp16))
 
     def index2cpu(self, group_name):
