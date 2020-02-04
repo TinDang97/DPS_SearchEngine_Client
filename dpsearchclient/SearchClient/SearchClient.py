@@ -2,12 +2,12 @@ import os
 import pickle
 import time
 
-from SearchClient.Type import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT
-from SearchClient.SearchEngine import SearchEngine, MetricType, IndexType, DistanceType, SearchMethod
+from .Type import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT
+from .SearchEngine import SearchEngine, MetricType, IndexType, SearchMethod
 from dpsutil.KafaWrapper import initial_producer, initial_consumer
 from dpsutil.RedisWrapper import initial_redis
 from dpsutil.hash import hash_now
-from dpsutil.compression import compress_ndarray, decompress_ndarray, compress, decompress
+from dpsutil.compression import compress_ndarray, decompress_ndarray, decompress
 from threading import Thread
 
 

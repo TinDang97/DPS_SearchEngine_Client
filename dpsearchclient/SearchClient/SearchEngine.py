@@ -1,7 +1,6 @@
 from enum import unique, Enum
 
-from SearchClient.Type import IndexType, MetricType, DistanceType,\
-    NLIST_AUTO, NPROBE_AUTO, GPU_USE_FP16_DEFAULT, GPU_CACHE_DEAULT
+from .Type import IndexType, MetricType, NLIST_AUTO, NPROBE_AUTO, GPU_USE_FP16_DEFAULT, GPU_CACHE_DEAULT
 
 
 @unique
