@@ -4,10 +4,10 @@ import time
 
 from SearchClient.Type import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT
 from SearchClient.SearchEngine import SearchEngine, MetricType, IndexType, DistanceType, SearchMethod
-from DPS_Util.KafaWrapper import initial_producer, initial_consumer
-from DPS_Util.RedisWrapper import initial_redis
-from DPS_Util.common.hash import hash_now
-from DPS_Util.compression import compress_ndarray, decompress_ndarray, compress, decompress
+from dpsutil.KafaWrapper import initial_producer, initial_consumer
+from dpsutil.RedisWrapper import initial_redis
+from dpsutil.hash import hash_now
+from dpsutil.compression import compress_ndarray, decompress_ndarray, compress, decompress
 from threading import Thread
 
 
