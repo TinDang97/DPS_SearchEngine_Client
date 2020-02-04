@@ -209,7 +209,6 @@ class SearchClient(SearchEngine):
                                                      group_name=group_name))
         with open(self._group_backup_file, "a") as f:
             f.write(f"{group_name}\n")
-            f.flush()
         return group_name
 
     def get_vector(self, group_name, ids=None):
@@ -295,6 +294,6 @@ class SearchClient(SearchEngine):
         return self._get_respond(self._request(SearchMethod.GROUP_EXISTED, group_name))
 
     def group_created(self):
-        with open(self._group_backup_file, 'r') as f:
-            groups = f.readlines()
+        with open(self._group_backup_file, 'rt') as f:
+            groups = f.read().splitlines()
         return groups
