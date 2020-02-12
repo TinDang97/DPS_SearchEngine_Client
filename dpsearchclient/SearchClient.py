@@ -1,14 +1,15 @@
 import os
 import pickle
 import time
+from threading import Thread
 
-from .Type import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT
-from .SearchEngine import SearchEngine, MetricType, IndexType, SearchMethod
 from dpsutil.KafaWrapper import initial_producer, initial_consumer
 from dpsutil.RedisWrapper import initial_redis
+from dpsutil.compression import compress_ndarray, decompress
 from dpsutil.hash import hash_now
-from dpsutil.compression import compress_ndarray, decompress_ndarray, decompress
-from threading import Thread
+
+from .MetaData import NLIST_AUTO, NPROBE_AUTO, GPU_CACHE_DEAULT, GPU_USE_FP16_DEFAULT, DEFAULT_TYPE
+from .SearchEngine import SearchEngine, MetricType, IndexType, SearchMethod
 
 
 class Params(dict):
@@ -68,7 +69,7 @@ class SearchClient(SearchEngine):
 
     def __init__(self, receive_topic=None, group_id=None,
                  kafka_host="localhost", kafka_user_name=None, kafka_password=None,
-                 redis_host="localhost:6379", redis_password="", clear_time=60):
+                 redis_host="localhost:6379", redis_password="", redis_db=0, clear_time=60):
         """
         :param receive_topic:
         :param group_id:
@@ -80,7 +81,7 @@ class SearchClient(SearchEngine):
         self.server_topic = "DPS_SEARCH_ENGINE_TESTING"
         self.sender = initial_producer(bootstrap_servers=kafka_host, sasl_plain_username=kafka_user_name,
                                        sasl_plain_password=kafka_password, value_serializer=pickle.dumps)
-        self.vector_fetcher = initial_redis(redis_host, password=redis_password)
+        self.vector_fetcher = initial_redis(host=redis_host, db=redis_db, password=redis_password)
 
         if receive_topic is None:
             receive_topic = generate_unique_label()
@@ -194,61 +195,31 @@ class SearchClient(SearchEngine):
         """
         return self._get_respond(self._request(SearchMethod.GROUP_NAMES))
 
-    def create_index(self, index_type: IndexType, metric_type: MetricType, dim: int, group_name=None):
-        """
-        :param index_type: support FLAT, IVF
-        :param metric_type: IP, L2
-        :param dim: int
-        :param group_name: str
-        :return: new Group's name
-        :rtype: str
-        """
+    def create_group(self, group_name, index_type: IndexType, metric_type: MetricType, dim: int, dtype=DEFAULT_TYPE,
+                     with_labels=False):
         index_type = index_type.name
         metric_type = metric_type.name
-        group_name = self._get_respond(self._request(SearchMethod.CREATE, index_type, metric_type, dim,
-                                                     group_name=group_name))
-        with open(self._group_backup_file, "a") as f:
-            f.write(f"{group_name}\n")
-        return group_name
+        is_success = self._get_respond(self._request(SearchMethod.CREATE, group_name, index_type, metric_type, dim,
+                                                     dtype=dtype, with_labels=with_labels))
+        if is_success:
+            with open(self._group_backup_file, "a") as f:
+                f.write(f"{group_name}\n")
+        return is_success
 
     def get_vector(self, group_name, ids=None):
         vector_idx = self._get_respond(self._request(SearchMethod.GET, group_name, ids=ids))
         buffer = self.vector_fetcher.get(vector_idx)
         self.vector_fetcher.delete(vector_idx)
-        return decompress_ndarray(buffer)
+        return pickle.loads(decompress(buffer))
 
-    def add_vector(self, group_name, vectors):
-        """
-        Add vectors into index. if ids is None, ids match with vectors that will be automatically create.
-        :param group_name: name of index
-        :param vectors: numpy.ndarray
-        :return: ids of vectors
-        """
+    def add_vector(self, group_name, vectors, labels=None, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO,
+                   filter_unique=False, filter_distance=1e-6):
         assert len(vectors.shape) == 2
         vector_idx = f"vector_{hash_now()}"
         self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
-        return self._get_respond(self._request(SearchMethod.ADD, group_name, vector_idx))
-
-    def train(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
-        """
-        Train to find nlist center point that uses to speed up search but take a lot of train time.
-        :param send_max_vectors:
-        :param group_name: name of index
-        :param vectors: numpy.ndarray
-        :param nlist: int
-        :param nprobe: int
-        Auto change to AUTO if nprobe > nlist. When nprobe == nlist as same as brute force search.
-        """
-        assert len(vectors.shape) == 2
-        vector_idx = f"vector_{hash_now()}"
-        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
-        return self._get_respond(self._request(SearchMethod.TRAIN, group_name, vector_idx, nlist=nlist, nprobe=nprobe))
-
-    def train_add(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
-        assert len(vectors.shape) == 2
-        vector_idx = f"vector_{hash_now()}"
-        self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
-        return self._get_respond(self._request(SearchMethod.TRAIN_ADD, group_name, vector_idx, nlist=nlist, nprobe=nprobe))
+        return self._get_respond(self._request(SearchMethod.ADD, group_name, vector_idx, labels=labels,
+                                               nlist=nlist, nprobe=nprobe,
+                                               filter_unique=filter_unique, filter_distance=filter_distance))
 
     def search(self, group_name, vectors, k=1):
         assert len(vectors.shape) == 2
@@ -274,8 +245,11 @@ class SearchClient(SearchEngine):
     def remove_vector(self, group_name, ids):
         return self._get_respond(self._request(SearchMethod.REMOVE_VECTOR, group_name, ids))
 
-    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
-        return self._get_respond(self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe))
+    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
+                gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
+        return self._get_respond(self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe,
+                                               filter_unique=filter_unique, filter_distance=filter_distance,
+                                               gpu_id=gpu_id, cache_size=cache_size, use_fp16=use_fp16))
 
     def index2gpu(self, group_name, gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
         return self._get_respond(self._request(SearchMethod.GPU, group_name, gpu_id=gpu_id, cache_size=cache_size,
@@ -285,10 +259,10 @@ class SearchClient(SearchEngine):
         return self._get_respond(self._request(SearchMethod.CPU, group_name))
 
     def save(self, group_name, over_write=False):
-        self._get_respond(self._request(SearchMethod.SAVE, group_name=group_name, over_write=over_write))
+        return bool(self._get_respond(self._request(SearchMethod.SAVE, group_name=group_name, over_write=over_write)))
 
     def load(self, group_name):
-        self._get_respond(self._request(SearchMethod.LOAD, group_name=group_name))
+        return self._get_respond(self._request(SearchMethod.LOAD, group_name=group_name))
 
     def is_group_existed(self, group_name):
         return self._get_respond(self._request(SearchMethod.GROUP_EXISTED, group_name))
@@ -297,3 +271,6 @@ class SearchClient(SearchEngine):
         with open(self._group_backup_file, 'rt') as f:
             groups = f.read().splitlines()
         return groups
+
+    def count_label(self, group_name, label):
+        return self._get_respond(self._request(SearchMethod.COUNT_LABEL, group_name, label))

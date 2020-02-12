@@ -1,6 +1,7 @@
 from enum import unique, Enum
 
-from .Type import IndexType, MetricType, NLIST_AUTO, NPROBE_AUTO, GPU_USE_FP16_DEFAULT, GPU_CACHE_DEAULT
+from .MetaData import IndexType, MetricType, NLIST_AUTO, NPROBE_AUTO, GPU_USE_FP16_DEFAULT, GPU_CACHE_DEAULT, \
+    DEFAULT_TYPE
 
 
 @unique
@@ -13,27 +14,26 @@ class SearchMethod(Enum):
     TRAIN_ADD = "TRAIN_ADD"
     RETRAIN = "RETRAIN"
     ADD = "ADD"
+    COUNT_LABEL = "COUNT_LABEL"
     GET = "GET"
     REMOVE_INDEX = "REMOVE_INDEX"
     REMOVE_VECTOR = "REMOVE_VECTOR"
     GPU = "GPU"
     CPU = "CPU"
-    GROUP_NAMES = "GROUP_NAMES"  # TODO: remove after debug
     GROUP_EXISTED = "GROUP_EXISTED"
     CHECK_CONNECTION = "CHECK_CONNECTION"
 
 
 class SearchEngine(object):
-    @property
-    def groups(self):
-        pass
-
-    def create_index(self, index_type: IndexType, metric_type: MetricType, dim: int, group_name=None):
+    def create_group(self, group_name, index_type: IndexType, metric_type: MetricType, dim: int, dtype=DEFAULT_TYPE,
+                     with_labels=False):
         """
         Create new index with name and metric's type.
         Optionals:
         - nlist: if you want to define first, this params can edit after on train step. (Only IVF type)
         - index_size: This define size of index in memory or vram if working on GPU.
+        :param with_labels:
+        :param dtype:
         :param group_name:
         :param index_type: support "FLAT" or "IVF"
         :param metric_type: support "L2" or "IP"
@@ -51,9 +51,14 @@ class SearchEngine(object):
         """
         pass
 
-    def add_vector(self, group_name, vectors):
+    def add_vector(self, group_name, vectors, labels=None, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6):
         """
-        Add vectors into index. if ids is None, ids match with vectors that will be automatically create.
+        Add vectors into index.
+        :param labels:
+        :param filter_distance:
+        :param filter_unique:
+        :param nprobe:
+        :param nlist:
         :param group_name: name of index
         :param vectors: numpy.ndarray
         :return: ids of vectors
@@ -63,21 +68,13 @@ class SearchEngine(object):
     def get_vector(self, group_name, ids=None):
         pass
 
-    def train(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
+    def search(self, group_name, vectors, k=1):
         """
-        Train to find nlist center point that uses to speed up search but take a lot of train time.
+        :param k: number of neighbour
         :param group_name: name of index
         :param vectors: numpy.ndarray
-        :param nlist: int
-        :param nprobe: int
-        Auto change to AUTO if nprobe > nlist. When nprobe == nlist as same as brute force search.
+        :return: ids of vectors
         """
-        pass
-
-    def train_add(self, group_name, vectors, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
-        pass
-
-    def search(self, group_name, vectors, k=1):
         pass
 
     def save(self, group_name, over_write=False):
@@ -92,7 +89,8 @@ class SearchEngine(object):
     def remove_vector(self, group_name, ids):
         pass
 
-    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO):
+    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
+                gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
         pass
 
     def index2gpu(self, group_name, gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
@@ -102,4 +100,7 @@ class SearchEngine(object):
         pass
 
     def is_group_existed(self, group_name):
+        pass
+
+    def count_label(self, group_name, label):
         pass
