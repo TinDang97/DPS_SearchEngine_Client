@@ -212,13 +212,11 @@ class SearchClient(SearchEngine):
         self.vector_fetcher.delete(vector_idx)
         return pickle.loads(decompress(buffer))
 
-    def add_vector(self, group_name, vectors, labels=None, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO,
-                   filter_unique=False, filter_distance=1e-6):
+    def add_vector(self, group_name, vectors, labels=None, filter_unique=False, filter_distance=1e-6):
         assert len(vectors.shape) == 2
         vector_idx = f"vector_{hash_now()}"
         self.vector_fetcher.set(vector_idx, compress_ndarray(vectors), ex=self._clear_time)
         return self._get_respond(self._request(SearchMethod.ADD, group_name, vector_idx, labels=labels,
-                                               nlist=nlist, nprobe=nprobe,
                                                filter_unique=filter_unique, filter_distance=filter_distance))
 
     def search(self, group_name, vectors, k=1):
@@ -245,9 +243,9 @@ class SearchClient(SearchEngine):
     def remove_vector(self, group_name, ids):
         return self._get_respond(self._request(SearchMethod.REMOVE_VECTOR, group_name, ids))
 
-    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
+    def train(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
                 gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
-        return self._get_respond(self._request(SearchMethod.RETRAIN, group_name, nlist=nlist, nprobe=nprobe,
+        return self._get_respond(self._request(SearchMethod.TRAIN, group_name, nlist=nlist, nprobe=nprobe,
                                                filter_unique=filter_unique, filter_distance=filter_distance,
                                                gpu_id=gpu_id, cache_size=cache_size, use_fp16=use_fp16))
 

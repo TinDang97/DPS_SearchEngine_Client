@@ -11,8 +11,6 @@ class SearchMethod(Enum):
     SEARCH = "SEARCH"
     CREATE = "CREATE"
     TRAIN = "TRAIN"
-    TRAIN_ADD = "TRAIN_ADD"
-    RETRAIN = "RETRAIN"
     ADD = "ADD"
     COUNT_LABEL = "COUNT_LABEL"
     GET = "GET"
@@ -44,14 +42,7 @@ class SearchEngine(object):
         """
         pass
 
-    def index_cpu_to_gpus(self, group_name):
-        """
-        :param group_name:
-        :return: bool
-        """
-        pass
-
-    def add_vector(self, group_name, vectors, labels=None, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6):
+    def add_vector(self, group_name, vectors, labels=None, filter_unique=False, filter_distance=1e-6):
         """
         Add vectors into index.
         :param labels:
@@ -89,8 +80,8 @@ class SearchEngine(object):
     def remove_vector(self, group_name, ids):
         pass
 
-    def retrain(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
-                gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
+    def train(self, group_name, nlist=NLIST_AUTO, nprobe=NPROBE_AUTO, filter_unique=False, filter_distance=1e-6,
+              gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
         pass
 
     def index2gpu(self, group_name, gpu_id=0, cache_size=GPU_CACHE_DEAULT, use_fp16=GPU_USE_FP16_DEFAULT):
