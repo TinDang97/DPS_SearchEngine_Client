@@ -78,22 +78,29 @@ class SearchClient(SearchEngine):
         :param password: kafka_password
         :param clear_time: in seconds
         """
-        self.server_topic = "DPS_SEARCH_ENGINE_TESTING"
-        self.sender = initial_producer(bootstrap_servers=kafka_host, sasl_plain_username=kafka_user_name,
-                                       sasl_plain_password=kafka_password, value_serializer=pickle.dumps)
-        self.vector_fetcher = initial_redis(host=redis_host, db=redis_db, password=redis_password)
-
-        if receive_topic is None:
-            receive_topic = generate_unique_label()
 
         if group_id is None:
             group_id = generate_unique_label()
 
-        self.receive_topic = receive_topic
-        self.receiver = initial_consumer(receive_topic,
-                                         group_id=group_id, bootstrap_servers=kafka_host,
+        self.server_topic = "DPS_SEARCH_ENGINE_TESTING"
+        self.sender = initial_producer(bootstrap_servers=kafka_host, sasl_plain_username=kafka_user_name,
+                                       sasl_plain_password=kafka_password, value_serializer=pickle.dumps)
+        self.receiver = initial_consumer(group_id=group_id, bootstrap_servers=kafka_host,
                                          sasl_plain_username=kafka_user_name, sasl_plain_password=kafka_password,
                                          enable_auto_commit=True, value_deserializer=pickle.loads)
+        self.vector_fetcher = initial_redis(host=redis_host, db=redis_db, password=redis_password)
+
+        if receive_topic is None:
+            new_receive_topic = generate_unique_label()
+        else:
+            new_receive_topic = receive_topic
+
+        while new_receive_topic in self.receiver.topics():
+            new_receive_topic = f"{receive_topic}_{hash_now()}"
+
+        self.receiver.subscribe(topics=new_receive_topic)
+        self.receive_topic = new_receive_topic
+
         self._result = {}
         self._clear_time = clear_time
 
