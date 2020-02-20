@@ -267,7 +267,7 @@ class SearchClient(SearchEngine):
         return bool(self._get_respond(self._request(SearchMethod.SAVE, group_name=group_name, over_write=over_write)))
 
     def load(self, group_name, with_labels=False):
-        return self._get_respond(self._request(SearchMethod.LOAD, group_name=group_name, with_labels=False))
+        return self._get_respond(self._request(SearchMethod.LOAD, group_name=group_name, with_labels=with_labels))
 
     def is_group_existed(self, group_name):
         return self._get_respond(self._request(SearchMethod.GROUP_EXISTED, group_name))
