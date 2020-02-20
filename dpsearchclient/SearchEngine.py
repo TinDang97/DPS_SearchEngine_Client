@@ -71,7 +71,7 @@ class SearchEngine(object):
     def save(self, group_name, over_write=False):
         pass
 
-    def load(self, group_name):
+    def load(self, group_name, with_labels=False):
         pass
 
     def remove_index(self, group_name):
