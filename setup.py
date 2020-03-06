@@ -8,5 +8,6 @@ setup(name='dpssearchclient',
       author_email='rainstone1029x@gmail.com',
       license='MIT',
       packages=find_packages(),
-      install_requires=[],
-      zip_safe=False)
+      install_requires=[
+            'dpsutil>=1.0.0'
+      ])

@@ -3,8 +3,8 @@ import pickle
 import time
 from threading import Thread
 
-from dpsutil.KafaWrapper import initial_producer, initial_consumer
-from dpsutil.RedisWrapper import initial_redis
+from dpsutil.kafka import initial_producer, initial_consumer
+from dpsutil.redis import initial_redis
 from dpsutil.compression import compress_ndarray, decompress
 from dpsutil.hash import hash_now
 
