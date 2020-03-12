@@ -1,7 +1,16 @@
-from enum import unique, Enum
 
-from .MetaData import IndexType, MetricType, NLIST_AUTO, NPROBE_AUTO, GPU_USE_FP16_DEFAULT, GPU_CACHE_DEAULT, \
-    DEFAULT_TYPE
+import numpy
+from enum import unique, Enum
+from .meta_data import IndexType, MetricType
+
+NPROBE_AUTO = 0
+NLIST_AUTO = 0
+
+DEFAULT_TYPE = numpy.float32
+PERFORMANCE_TYPE = numpy.float16
+
+GPU_USE_FP16_DEFAULT = True
+GPU_CACHE_DEAULT = 256 * 1024 * 1024
 
 
 @unique
@@ -23,7 +32,7 @@ class SearchMethod(Enum):
 
 
 class SearchEngine(object):
-    def create_group(self, group_name, index_type: IndexType, metric_type: MetricType, dim: int, dtype=DEFAULT_TYPE,
+    def create(self, group_name, index_type: IndexType, metric_type: MetricType, dim: int, dtype=DEFAULT_TYPE,
                      with_labels=False):
         """
         Create new index with name and metric's type.
@@ -42,7 +51,7 @@ class SearchEngine(object):
         """
         pass
 
-    def add_vector(self, group_name, vectors, labels=None, filter_unique=False, filter_distance=1e-6):
+    def add(self, group_name, vectors, labels=None, filter_unique=False, filter_distance=1e-6):
         """
         Add vectors into index.
         :param labels:
@@ -56,7 +65,7 @@ class SearchEngine(object):
         """
         pass
 
-    def get_vector(self, group_name, ids=None):
+    def get(self, group_name, ids=None):
         pass
 
     def search(self, group_name, vectors, k=1):
@@ -74,7 +83,7 @@ class SearchEngine(object):
     def load(self, group_name, with_labels=False):
         pass
 
-    def remove_index(self, group_name):
+    def remove(self, group_name):
         pass
 
     def remove_vector(self, group_name, ids):
@@ -90,7 +99,7 @@ class SearchEngine(object):
     def index2cpu(self, group_name):
         pass
 
-    def is_group_existed(self, group_name):
+    def is_existed(self, group_name):
         pass
 
     def count_label(self, group_name, label):

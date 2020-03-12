@@ -1,2 +1,3 @@
-from .SearchClient import SearchClient
-from dpsearchclient import MetaData
+from .search_client import *
+from .meta_data import *
+
