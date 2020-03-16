@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='dpssearchclient',
-      version='1.0',
+      version='1.0.0',
       description='',
       url='https://github.com/TinDang97/DPS_SearchEngine_Client',
       author='TinDang',
@@ -9,6 +9,6 @@ setup(name='dpssearchclient',
       license='MIT',
       packages=find_packages(),
       install_requires=[
-            'dpsutil>=1.0.0',
+            'dpsutil>=1.1.13',
             'numpy'
       ])

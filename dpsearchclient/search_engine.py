@@ -1,4 +1,3 @@
-
 import numpy
 from enum import unique, Enum
 from .meta_data import IndexType, MetricType
@@ -13,40 +12,14 @@ GPU_USE_FP16_DEFAULT = True
 GPU_CACHE_DEAULT = 256 * 1024 * 1024
 
 
-@unique
-class SearchMethod(Enum):
-    LOAD = "LOAD"
-    SAVE = "SAVE"
-    SEARCH = "SEARCH"
-    CREATE = "CREATE"
-    TRAIN = "TRAIN"
-    ADD = "ADD"
-    COUNT_LABEL = "COUNT_LABEL"
-    GET = "GET"
-    REMOVE_INDEX = "REMOVE_INDEX"
-    REMOVE_VECTOR = "REMOVE_VECTOR"
-    GPU = "GPU"
-    CPU = "CPU"
-    GROUP_EXISTED = "GROUP_EXISTED"
-    CHECK_CONNECTION = "CHECK_CONNECTION"
-
-
-class SearchEngine(object):
+class SearchEngineMethods(object):
     def create(self, group_name, index_type: IndexType, metric_type: MetricType, dim: int, dtype=DEFAULT_TYPE,
-                     with_labels=False):
+               with_labels=False):
         """
         Create new index with name and metric's type.
         Optionals:
         - nlist: if you want to define first, this params can edit after on train step. (Only IVF type)
         - index_size: This define size of index in memory or vram if working on GPU.
-        :param with_labels:
-        :param dtype:
-        :param group_name:
-        :param index_type: support "FLAT" or "IVF"
-        :param metric_type: support "L2" or "IP"
-        :param dim: dim
-        :param use_gpu: True or False
-        :param index_size: Size of cache memory that uses in GPU if use_gpu=true
         :return: group_name
         """
         pass
@@ -54,14 +27,6 @@ class SearchEngine(object):
     def add(self, group_name, vectors, labels=None, filter_unique=False, filter_distance=1e-6):
         """
         Add vectors into index.
-        :param labels:
-        :param filter_distance:
-        :param filter_unique:
-        :param nprobe:
-        :param nlist:
-        :param group_name: name of index
-        :param vectors: numpy.ndarray
-        :return: ids of vectors
         """
         pass
 
@@ -70,9 +35,6 @@ class SearchEngine(object):
 
     def search(self, group_name, vectors, k=1):
         """
-        :param k: number of neighbour
-        :param group_name: name of index
-        :param vectors: numpy.ndarray
         :return: ids of vectors
         """
         pass
