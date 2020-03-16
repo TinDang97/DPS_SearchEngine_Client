@@ -1,5 +1,5 @@
 import numpy
-from enum import unique, Enum
+
 from .meta_data import IndexType, MetricType
 
 NPROBE_AUTO = 0
