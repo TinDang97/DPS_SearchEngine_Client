@@ -4,7 +4,7 @@ import time
 from queue import Queue
 from threading import Thread
 
-from dpsutil.attrdict import DefaultDict
+from dpsutil.attrdict import DefaultDict, AttrDict
 from dpsutil.compression import compress_ndarray, decompress
 from dpsutil.hash import hash_now
 from dpsutil.kafka import initial_producer, initial_consumer
@@ -30,7 +30,7 @@ class SearchClient(SearchEngineMethods):
                  receive_topic=None,
                  group_id=None,
                  kafka_host="localhost",
-                 kafka_user_name=None,
+                 kafka_username=None,
                  kafka_password=None,
                  redis_host="localhost:6379",
                  redis_password="",
@@ -43,12 +43,12 @@ class SearchClient(SearchEngineMethods):
 
         self.server_topic = "DPS_SEARCH_ENGINE_TESTING"
         self.sender = initial_producer(bootstrap_servers=kafka_host,
-                                       sasl_plain_username=kafka_user_name,
+                                       sasl_plain_username=kafka_username,
                                        sasl_plain_password=kafka_password)
 
         self.receiver = initial_consumer(bootstrap_servers=kafka_host,
                                          group_id=group_id,
-                                         sasl_plain_username=kafka_user_name,
+                                         sasl_plain_username=kafka_username,
                                          sasl_plain_password=kafka_password,
                                          enable_auto_commit=True)
 
@@ -115,8 +115,8 @@ class SearchClient(SearchEngineMethods):
                 break
 
             self._res_params.clear()
-            self._res_params.from_buffer(message_block.value)
-            _res_params = self._res_params.copy()
+            self._res_params(message_block.value)
+            _res_params = AttrDict(self._res_params)
             _res_params.time_stamp = time.time()
             self._result.put(_res_params)
 
@@ -142,6 +142,7 @@ class SearchClient(SearchEngineMethods):
         if not session:
             return
 
+        os.rename(self.session_file, f"{self.session_file}_backup_{time.time()}")
         with open(self.session_file, "w") as f:
             f.write(session)
 
